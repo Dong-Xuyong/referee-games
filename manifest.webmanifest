@@ -1,0 +1,10 @@
+{
+  "name": "Referee Games",
+  "short_name": "Games",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f4ef",
+  "theme_color": "#f6f4ef",
+  "lang": "en"
+}
