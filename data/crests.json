@@ -1,0 +1,47 @@
+{
+  "Sequeirense": {
+    "slug": "sequeirense",
+    "file": "assets/crests/sequeirense.webp",
+    "source_url": "https://www.zerozero.pt/img/logos/equipas/37/15237_logo_sequeirense.jpg"
+  },
+  "Sequeirense Futebol Clube": {
+    "slug": "sequeirense",
+    "file": "assets/crests/sequeirense.webp",
+    "source_url": "https://www.zerozero.pt/img/logos/equipas/37/15237_logo_sequeirense.jpg"
+  },
+  "Parada de Tibães": {
+    "slug": "parada-de-tibaes",
+    "file": "assets/crests/parada-de-tibaes.webp",
+    "source_url": "https://www.zerozero.pt/img/logos/equipas/36/10936_logo_parada_de_tibaes.jpg"
+  },
+  "Associação Cultural e Desportiva de Parada de Tibães": {
+    "slug": "parada-de-tibaes",
+    "file": "assets/crests/parada-de-tibaes.webp",
+    "source_url": "https://www.zerozero.pt/img/logos/equipas/36/10936_logo_parada_de_tibaes.jpg"
+  },
+  "FC Famalicão": {
+    "slug": "fc-famalicao",
+    "file": "assets/crests/fc-famalicao.webp",
+    "source_url": "https://fe-content.smartfan.tickets/images/clubes/logos/logo-fcfamalicao.png"
+  },
+  "FC Famalicão B": {
+    "slug": "fc-famalicao",
+    "file": "assets/crests/fc-famalicao.webp",
+    "source_url": "https://fe-content.smartfan.tickets/images/clubes/logos/logo-fcfamalicao.png"
+  },
+  "Futebol Clube de Famalicão": {
+    "slug": "fc-famalicao",
+    "file": "assets/crests/fc-famalicao.webp",
+    "source_url": "https://fe-content.smartfan.tickets/images/clubes/logos/logo-fcfamalicao.png"
+  },
+  "Operário Famalicão": {
+    "slug": "operario-famalicao",
+    "file": "assets/crests/operario-famalicao.webp",
+    "source_url": "https://www.zerozero.pt/img/logos/equipas/18/10918_logo_operario_famalicao.png"
+  },
+  "Operário Futebol Clube": {
+    "slug": "operario-famalicao",
+    "file": "assets/crests/operario-famalicao.webp",
+    "source_url": "https://www.zerozero.pt/img/logos/equipas/18/10918_logo_operario_famalicao.png"
+  }
+}
