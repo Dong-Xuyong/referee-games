@@ -28,6 +28,15 @@
   var mode = { type: "list" };
   var pastOpen = false;
   var jumpTop = false;
+  var openGames = {};
+  var crestByNorm = {};
+  var CREST_DROP = {
+    de: 1, da: 1, do: 1, dos: 1, das: 1, e: 1, a: 1, o: 1, os: 1, as: 1,
+    futebol: 1, clube: 1, club: 1, sport: 1, sporting: 1, grupo: 1,
+    desportivo: 1, desportiva: 1, associacao: 1, recreativo: 1, recreativa: 1,
+    cultural: 1, uniao: 1, atletico: 1, centro: 1, atl: 1, sp: 1,
+    fc: 1, sc: 1, gd: 1, ad: 1, ud: 1, cf: 1, cd: 1, ac: 1, cr: 1, sad: 1, gfc: 1, afc: 1
+  };
 
   function line(value) {
     if (value == null) return "";
@@ -480,10 +489,144 @@
     parent.appendChild(block);
   }
 
+  function foldName(value) {
+    return line(value)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  }
+
+  function normClub(value) {
+    return foldName(value)
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .split(" ")
+      .filter(function (word) {
+        return word && !CREST_DROP[word];
+      })
+      .join(" ");
+  }
+
+  function crestFile(name) {
+    var key = normClub(name);
+    var file = key ? crestByNorm[key] : "";
+    if (!file || !/^[a-z0-9][a-z0-9.-]{0,80}\.(webp|png)$/.test(file)) return "";
+    return file;
+  }
+
+  function initialsOf(name) {
+    var parts = line(name).split(/\s+/).filter(Boolean);
+    var words = parts.filter(function (word) {
+      var token = foldName(word).replace(/[^a-z0-9]/g, "");
+      return token && !CREST_DROP[token];
+    });
+    if (!words.length) words = parts;
+    if (!words.length) return "";
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
+  }
+
+  function badgeColor(name) {
+    var text = normClub(name) || foldName(name) || "club";
+    var hash = 0;
+    for (var i = 0; i < text.length; i += 1) hash = (hash * 33 + text.charCodeAt(i)) >>> 0;
+    return "hsl(" + (hash % 360) + " 48% 26%)";
+  }
+
+  function initialsBadge(name) {
+    var badge = node("span", "crest-fallback", initialsOf(name) || "?");
+    badge.style.background = badgeColor(name);
+    badge.setAttribute("aria-hidden", "true");
+    return badge;
+  }
+
+  function crestEl(name) {
+    var file = crestFile(name);
+    if (!file) return initialsBadge(name);
+    var img = document.createElement("img");
+    img.className = "crest";
+    img.alt = "";
+    img.width = 24;
+    img.height = 24;
+    img.decoding = "async";
+    img.src = "assets/crests/" + file;
+    img.addEventListener("error", function () {
+      var badge = initialsBadge(name);
+      if (img.parentNode) img.parentNode.replaceChild(badge, img);
+    });
+    return img;
+  }
+
+  function rowDateLabel(iso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || "")) return "";
+    var ms = zonedMs(iso, "12:00");
+    if (ms == null) return iso;
+    var nowYear = new Intl.DateTimeFormat("en-GB", {
+      timeZone: TZ,
+      year: "numeric"
+    }).format(new Date());
+    var opts = { timeZone: TZ, day: "numeric", month: "short" };
+    if (iso.slice(0, 4) !== nowYear) opts.year = "2-digit";
+    return new Intl.DateTimeFormat("en-GB", opts).format(new Date(ms));
+  }
+
+  function rowCountText(game) {
+    if (isPast(game)) return "played";
+    var date = line(game && game.date);
+    var time = line(game && game.time);
+    if (date && date === lisbonToday()) return time ? "today " + time : "today";
+    var ms = date && time ? zonedMs(date, time) : null;
+    if (ms == null) return "";
+    var diff = ms - Date.now();
+    if (diff <= 0) return "played";
+    var mins = Math.floor(diff / 60000);
+    var days = Math.floor(mins / 1440);
+    var hours = Math.floor((mins - days * 1440) / 60);
+    var minutes = mins % 60;
+    if (days > 0) return "in " + days + "d " + hours + "h";
+    if (hours > 0) return "in " + hours + "h " + minutes + "m";
+    if (minutes > 0) return "in " + minutes + "m";
+    return "in <1m";
+  }
+
+  function renderSummary(game) {
+    var summary = document.createElement("summary");
+    summary.className = "match-row";
+    var home = line(game.home);
+    var away = line(game.away);
+    var date = rowDateLabel(line(game.date));
+    var time = line(game.time);
+    if (date) summary.appendChild(node("span", "row-date", date));
+    if (time) summary.appendChild(node("span", "row-time", time));
+    var teams = node("span", "row-teams");
+    if (home || away) {
+      teams.appendChild(crestEl(home));
+      teams.appendChild(node("span", "row-club home", home || "Home"));
+      teams.appendChild(node("span", "row-vs", "vs"));
+      teams.appendChild(crestEl(away));
+      teams.appendChild(node("span", "row-club away", away || "Away"));
+    } else {
+      teams.appendChild(node("span", "row-club", "Untitled game"));
+    }
+    summary.appendChild(teams);
+    var count = node("span", "row-count", rowCountText(game));
+    count.setAttribute("data-row-count", "1");
+    count.setAttribute("data-date", line(game.date));
+    count.setAttribute("data-time", line(game.time));
+    count.setAttribute("data-status", line(game.status));
+    summary.appendChild(count);
+    return summary;
+  }
+
   function renderCard(game, past) {
     var card = node("article", past ? "match is-past" : "match");
     card.setAttribute("data-game-id", game.id);
-    card.appendChild(node("div", "match-stripe"));
+    var fold = document.createElement("details");
+    fold.className = "match-fold";
+    if (openGames[game.id]) fold.open = true;
+    fold.appendChild(renderSummary(game));
+    var body = node("div", "match-body");
+    body.appendChild(node("div", "match-stripe"));
 
     var comp = line(game.competition);
     var jornada = game.jornada;
@@ -492,7 +635,7 @@
       var top = node("div", "match-top");
       if (comp) top.appendChild(node("p", "comp", comp));
       if (hasJornada) top.appendChild(node("span", "jornada", "Jornada " + line(jornada)));
-      card.appendChild(top);
+      body.appendChild(top);
     }
 
     var home = line(game.home);
@@ -500,43 +643,58 @@
     if (home && away) {
       var teams = node("div", "teams");
       var homeSide = node("div", "side home");
-      homeSide.appendChild(node("span", "side-label", "Home"));
-      homeSide.appendChild(node("h2", "", home));
+      var homeHead = node("div", "side-head");
+      homeHead.appendChild(crestEl(home));
+      var homeText = node("div", "side-text");
+      homeText.appendChild(node("span", "side-label", "Home"));
+      homeText.appendChild(node("h2", "", home));
+      homeHead.appendChild(homeText);
+      homeSide.appendChild(homeHead);
       var awaySide = node("div", "side away");
-      awaySide.appendChild(node("span", "side-label", "Away"));
-      awaySide.appendChild(node("h2", "", away));
+      var awayHead = node("div", "side-head");
+      awayHead.appendChild(crestEl(away));
+      var awayText = node("div", "side-text");
+      awayText.appendChild(node("span", "side-label", "Away"));
+      awayText.appendChild(node("h2", "", away));
+      awayHead.appendChild(awayText);
+      awaySide.appendChild(awayHead);
       teams.appendChild(homeSide);
       teams.appendChild(node("div", "vs", "VS"));
       teams.appendChild(awaySide);
-      card.appendChild(teams);
+      body.appendChild(teams);
     } else if (home || away) {
       var one = node("div", "teams single");
       var side = node("div", "side");
-      side.appendChild(node("span", "side-label", home ? "Home" : "Away"));
-      side.appendChild(node("h2", "", home || away));
+      var head = node("div", "side-head");
+      head.appendChild(crestEl(home || away));
+      var text = node("div", "side-text");
+      text.appendChild(node("span", "side-label", home ? "Home" : "Away"));
+      text.appendChild(node("h2", "", home || away));
+      head.appendChild(text);
+      side.appendChild(head);
       one.appendChild(side);
-      card.appendChild(one);
+      body.appendChild(one);
     } else {
-      card.appendChild(node("h2", "untitled", "Untitled game"));
+      body.appendChild(node("h2", "untitled", "Untitled game"));
     }
 
-    appendWhen(card, game);
-    appendFacts(card, game);
-    appendTeam(card, game);
+    appendWhen(body, game);
+    appendFacts(body, game);
+    appendTeam(body, game);
     var table = isRecord(game.table) ? game.table : null;
     appendSplits(
-      card,
+      body,
       "Table",
       home,
       away,
       table ? tableBits(table.home) : "",
       table ? tableBits(table.away) : ""
     );
-    appendSplits(card, "Last result", home, away, sideText(game.lastResult, "home"), sideText(game.lastResult, "away"));
-    appendSplits(card, "Last-game cards", home, away, sideText(game.lastGameCards, "home"), sideText(game.lastGameCards, "away"));
+    appendSplits(body, "Last result", home, away, sideText(game.lastResult, "home"), sideText(game.lastResult, "away"));
+    appendSplits(body, "Last-game cards", home, away, sideText(game.lastGameCards, "home"), sideText(game.lastGameCards, "away"));
     var kits = isRecord(game.kits) ? game.kits : null;
     appendSplits(
-      card,
+      body,
       "Kits",
       "Home",
       "Away",
@@ -544,28 +702,30 @@
       kits ? sideText(kits, "away") : ""
     );
     if (kits && hasLine(kits.referee)) {
-      var kitBlock = card.lastChild && card.lastChild.classList && card.lastChild.classList.contains("block")
-        && card.lastChild.querySelector("h3")
-        && card.lastChild.querySelector("h3").textContent === "Kits"
-        ? card.lastChild
+      var kitBlock = body.lastChild && body.lastChild.classList && body.lastChild.classList.contains("block")
+        && body.lastChild.querySelector("h3")
+        && body.lastChild.querySelector("h3").textContent === "Kits"
+        ? body.lastChild
         : null;
       if (!kitBlock) {
         kitBlock = node("section", "block");
         kitBlock.appendChild(node("h3", "", "Kits"));
-        card.appendChild(kitBlock);
+        body.appendChild(kitBlock);
       }
       var refKit = splitRow("Referee", kits.referee);
       if (refKit) kitBlock.appendChild(refKit);
     }
-    appendPrep(card, game);
-    appendRules(card, game);
-    appendNotes(card, game);
+    appendPrep(body, game);
+    appendRules(body, game);
+    appendNotes(body, game);
 
     var edit = node("button", "edit-btn", "Edit");
     edit.type = "button";
     edit.setAttribute("data-action", "edit");
     edit.setAttribute("data-id", game.id);
-    card.appendChild(edit);
+    body.appendChild(edit);
+    fold.appendChild(body);
+    card.appendChild(fold);
     return card;
   }
 
@@ -792,6 +952,10 @@
     if (!els.main) return;
     var pastEl = document.getElementById("past-games");
     if (pastEl) pastOpen = pastEl.open;
+    document.querySelectorAll(".match-fold").forEach(function (el) {
+      var id = el.parentElement && el.parentElement.getAttribute("data-game-id");
+      if (id) openGames[id] = el.open;
+    });
     var y = jumpTop ? 0 : window.scrollY;
     if (!hasToken()) {
       renderEmpty("Your games stay private. Connect sync to load them on this device.");
@@ -1132,11 +1296,45 @@
     touch();
   }
 
+  function indexCrests(data) {
+    crestByNorm = {};
+    if (!isRecord(data)) return;
+    Object.keys(data).forEach(function (name) {
+      var file = data[name];
+      if (typeof file !== "string") return;
+      var base = file.split("/").pop();
+      if (!/^[a-z0-9][a-z0-9.-]{0,80}\.(webp|png)$/.test(base)) return;
+      var key = normClub(name);
+      if (key) crestByNorm[key] = base;
+    });
+  }
+
+  function loadCrests() {
+    fetch("assets/crests/crests.json")
+      .then(function (res) {
+        return res.ok ? res.json() : {};
+      })
+      .then(function (data) {
+        indexCrests(data);
+        if (doc && mode.type === "list") render();
+      })
+      .catch(function () {
+        crestByNorm = {};
+      });
+  }
+
   function tickCountdowns() {
     document.querySelectorAll("[data-countdown]").forEach(function (el) {
       var ms = Number(el.getAttribute("data-countdown"));
       el.textContent = countdownLabel(ms);
       el.className = countdownClass(ms);
+    });
+    document.querySelectorAll("[data-row-count]").forEach(function (el) {
+      el.textContent = rowCountText({
+        date: el.getAttribute("data-date"),
+        time: el.getAttribute("data-time"),
+        status: el.getAttribute("data-status")
+      });
     });
   }
 
@@ -1171,6 +1369,7 @@
 
   showConnect();
   render();
+  loadCrests();
   setInterval(autoLoad, 60000);
   setInterval(tickCountdowns, 15000);
   autoLoad();
