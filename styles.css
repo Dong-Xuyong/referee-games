@@ -553,7 +553,7 @@ html.dark footer button {
   margin: 8px 0 12px;
 }
 
-.past summary {
+.past > summary {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -565,11 +565,11 @@ html.dark footer button {
   list-style: none;
 }
 
-.past summary::-webkit-details-marker {
+.past > summary::-webkit-details-marker {
   display: none;
 }
 
-.past summary::before {
+.past > summary::before {
   content: "";
   width: 0.45em;
   height: 0.45em;
@@ -580,8 +580,137 @@ html.dark footer button {
   transition: transform 160ms ease;
 }
 
-.past[open] summary::before {
+.past[open] > summary::before {
   transform: rotate(45deg);
+}
+
+.subdetails {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.subdetails > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 2px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+  color: var(--dx-text, var(--ink));
+}
+
+.subdetails > summary::-webkit-details-marker {
+  display: none;
+}
+
+.subdetails > summary::marker {
+  content: "";
+}
+
+.subdetails > summary::before {
+  content: "";
+  width: 0.45em;
+  height: 0.45em;
+  margin-right: 8px;
+  flex: none;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.subdetails[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.sub-body {
+  padding: 0 0 8px 16px;
+  min-width: 0;
+}
+
+.detail-line,
+.gap-note,
+.device-note,
+.sub-body .map,
+.sub-body .source {
+  margin: 0 0 6px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.detail-line {
+  color: var(--dx-text, var(--ink));
+}
+
+.gap-note,
+.device-note {
+  color: var(--dx-muted, var(--text-dim));
+  font-size: 0.9rem;
+}
+
+.sub-body .map,
+.sub-body .source,
+.sub-body .phone {
+  color: hsl(var(--tint-ink));
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sub-body .map,
+.sub-body .source {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.checks {
+  display: grid;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-weight: 600;
+  color: var(--dx-text, var(--ink));
+}
+
+.check input {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: hsl(152 45% 28%);
+}
+
+.self-note {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 96px;
+  margin: 0 0 6px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--dx-text, var(--ink));
+  font: inherit;
+  line-height: 1.4;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.contact {
+  margin: 0 0 8px;
+  min-width: 0;
+}
+
+.contact .phone {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .count {
