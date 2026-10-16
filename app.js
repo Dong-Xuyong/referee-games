@@ -535,7 +535,7 @@
   function crestFile(name) {
     var key = normClub(name);
     var file = key ? crestByNorm[key] : "";
-    if (!file || !/^[a-z0-9][a-z0-9.-]{0,80}\.(webp|png)$/.test(file)) return "";
+    if (!file || !/^assets\/crests\/[a-z0-9][a-z0-9.-]{0,80}\.(webp|png)$/.test(file)) return "";
     return file;
   }
 
@@ -574,7 +574,7 @@
     img.width = 24;
     img.height = 24;
     img.decoding = "async";
-    img.src = "assets/crests/" + file;
+    img.src = file;
     img.addEventListener("error", function () {
       var badge = initialsBadge(name);
       if (img.parentNode) img.parentNode.replaceChild(badge, img);
@@ -669,7 +669,7 @@
     Object.keys(venues).forEach(function (name) {
       var venue = venues[name];
       if (!isRecord(venue)) return;
-      [name, venue.osm_name, venue.address].forEach(function (label) {
+      [name, venue.name, venue.osm_name, venue.address].forEach(function (label) {
         var key = normClub(label);
         if (key && !venueByNorm[key]) venueByNorm[key] = venue;
       });
@@ -700,9 +700,11 @@
 
   function drivingMinutes(record) {
     if (!record) return null;
-    var minutes = record.driving_minutes_from_guimaraes;
+    var minutes = record.drive_min;
+    if (minutes == null || minutes === "") minutes = record.driving_minutes_from_guimaraes;
+    if (typeof minutes === "string" && minutes.trim() !== "" && isFinite(Number(minutes))) minutes = Number(minutes);
     if (typeof minutes !== "number" || !isFinite(minutes) || minutes < 0) return null;
-    if (!safeHttp(record.route_source_url)) return null;
+    if (!safeHttp(record.source_url) && !safeHttp(record.route_source_url)) return null;
     return Math.round(minutes);
   }
 
@@ -797,12 +799,51 @@
     return key && clubByNorm[key] ? clubByNorm[key] : null;
   }
 
+  function colourText(value) {
+    if (typeof value === "string") return line(value);
+    if (Array.isArray(value)) return value.map(line).filter(Boolean).join(" / ");
+    return "";
+  }
+
+  function firstColour(values) {
+    for (var i = 0; i < values.length; i += 1) {
+      var text = colourText(values[i]);
+      if (text) return text;
+    }
+    return "";
+  }
+
   function knownColours(club) {
-    if (!club || !line(club.primary)) return null;
+    if (!isRecord(club)) return null;
+    var kit = isRecord(club.kit) ? club.kit : null;
+    var primary = firstColour([
+      club.primary,
+      club.primary_colour,
+      club.primary_color,
+      kit && kit.primary,
+      kit && kit.primary_colour,
+      club.kit_colours,
+      club.kit_colors,
+      club.colours,
+      club.colors,
+      club.colour,
+      club.color,
+      kit && (kit.colours || kit.colors || kit.colour || kit.color),
+      typeof club.kit === "string" ? club.kit : ""
+    ]);
+    if (!primary) return null;
+    var secondary = firstColour([
+      club.secondary,
+      club.secondary_colour,
+      club.secondary_color,
+      kit && kit.secondary,
+      kit && kit.secondary_colour
+    ]);
+    if (secondary && primary.toLowerCase().indexOf(secondary.toLowerCase()) !== -1) secondary = "";
     return {
-      primary: line(club.primary),
-      secondary: line(club.secondary),
-      source: safeHttp(club.source_url)
+      primary: primary,
+      secondary: secondary,
+      source: safeHttp(club.source_url) || (kit ? safeHttp(kit.source_url) : "")
     };
   }
 
@@ -1019,23 +1060,60 @@
     parent.appendChild(wrap);
   }
 
+  function pushPhone(list, value) {
+    if (typeof value === "string") {
+      var phone = line(value);
+      if (phone && list.indexOf(phone) < 0) list.push(phone);
+      return;
+    }
+    if (!Array.isArray(value)) return;
+    value.forEach(function (item) { pushPhone(list, item); });
+  }
+
+  function readOffice(value) {
+    var address = "";
+    var phones = [];
+    var email = "";
+    var source = "";
+    function take(item) {
+      if (typeof item === "string") {
+        var text = line(item);
+        if (!text) return;
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) && !email) email = text;
+        else if (/\d/.test(text)) pushPhone(phones, text);
+        return;
+      }
+      if (!isRecord(item)) return;
+      if (!address) address = line(item.address || item.morada);
+      pushPhone(phones, item.phones || item.phone || item.tel);
+      if (!email) email = line(item.email);
+      if (!source) source = safeHttp(item.source_url);
+      if (Array.isArray(item.contacts)) item.contacts.forEach(take);
+    }
+    if (Array.isArray(value)) value.forEach(take);
+    else take(value);
+    if (!address && !phones.length && !email) return null;
+    return { address: address, phones: phones, email: email, source: source };
+  }
+
+  function afBragaOffice() {
+    if (!extras) return null;
+    return readOffice(extras.afbraga_contacts || extras.af_braga || extras.afBraga);
+  }
+
   function appendContacts(parent, game) {
     var block = subDetails("contacts", "Contacts", game.id);
     var team = isRecord(game.team) ? game.team : null;
     var delegate = contactBits(game.delegate) || contactBits(team && team.delegate);
     appendContactPerson(block.body, "Delegate", delegate);
-    var office = extras && isRecord(extras.af_braga) ? extras.af_braga : null;
+    var office = afBragaOffice();
     var wrap = node("div", "contact");
     wrap.appendChild(node("span", "fact-label", "AF Braga"));
-    var address = office ? line(office.address) : "";
-    var phones = office && Array.isArray(office.phones) ? office.phones.map(line).filter(Boolean) : [];
-    var email = office ? line(office.email) : "";
-    var source = office ? safeHttp(office.source_url) : "";
-    if (!address && !phones.length && !email) {
+    if (!office) {
       wrap.appendChild(node("p", "gap-note", "Not set"));
     } else {
-      if (address) wrap.appendChild(node("p", "detail-line", address));
-      phones.forEach(function (phone) {
+      if (office.address) wrap.appendChild(node("p", "detail-line", office.address));
+      office.phones.forEach(function (phone) {
         var href = telHref(phone);
         if (!href) {
           wrap.appendChild(node("p", "detail-line", phone));
@@ -1045,13 +1123,13 @@
         link.href = href;
         wrap.appendChild(link);
       });
-      if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        var mail = node("a", "phone", email);
-        mail.href = "mailto:" + email;
+      if (office.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(office.email)) {
+        var mail = node("a", "phone", office.email);
+        mail.href = "mailto:" + office.email;
         wrap.appendChild(mail);
       }
-      if (source) {
-        var cite = externalLink(source, source, "source");
+      if (office.source) {
+        var cite = externalLink(office.source, office.source, "source");
         if (cite) wrap.appendChild(cite);
       }
     }
@@ -1751,47 +1829,62 @@
     touch();
   }
 
+  function safeCrestPath(file) {
+    var value = line(file).replace(/\\/g, "/").replace(/^\.?\//, "");
+    var base = value.split("/").pop();
+    if (!/^[a-z0-9][a-z0-9.-]{0,80}\.(webp|png)$/.test(base)) return "";
+    if (value === base || value === "assets/crests/" + base) return "assets/crests/" + base;
+    return "";
+  }
+
+  function crestSrc(entry) {
+    if (typeof entry === "string") return safeCrestPath(entry);
+    if (!isRecord(entry)) return "";
+    var fromFile = safeCrestPath(entry.file);
+    if (fromFile) return fromFile;
+    var slug = line(entry.slug);
+    if (/^[a-z0-9][a-z0-9-]{0,80}$/.test(slug)) return "assets/crests/" + slug + ".webp";
+    return "";
+  }
+
+  function addCrest(name, src) {
+    var key = normClub(name);
+    if (!src || !key || crestByNorm[key]) return;
+    crestByNorm[key] = src;
+  }
+
   function indexCrests(data) {
-    crestByNorm = {};
     if (!isRecord(data)) return;
     Object.keys(data).forEach(function (name) {
-      var file = data[name];
-      if (typeof file !== "string") return;
-      var base = file.split("/").pop();
-      if (!/^[a-z0-9][a-z0-9.-]{0,80}\.(webp|png)$/.test(base)) return;
-      var key = normClub(name);
-      if (key) crestByNorm[key] = base;
+      addCrest(name, crestSrc(data[name]));
+    });
+  }
+
+  function loadJson(url) {
+    return fetch(url).then(function (res) {
+      if (!res.ok) return null;
+      return res.json();
+    }).catch(function () {
+      return null;
     });
   }
 
   function loadExtras() {
-    fetch("data/game-extras.json")
-      .then(function (res) {
-        return res.ok ? res.json() : null;
-      })
-      .then(function (data) {
-        indexExtras(data);
-        if (doc && mode.type === "list") render();
-      })
-      .catch(function () {
-        extras = null;
-        venueByNorm = {};
-        clubByNorm = {};
-      });
+    loadJson("data/game-extras.json").then(function (data) {
+      indexExtras(data);
+      if (doc && mode.type === "list") render();
+    });
   }
 
   function loadCrests() {
-    fetch("assets/crests/crests.json")
-      .then(function (res) {
-        return res.ok ? res.json() : {};
-      })
-      .then(function (data) {
-        indexCrests(data);
-        if (doc && mode.type === "list") render();
-      })
-      .catch(function () {
-        crestByNorm = {};
-      });
+    Promise.all([
+      loadJson("data/crests.json"),
+      loadJson("assets/crests/crests.json")
+    ]).then(function (parts) {
+      crestByNorm = {};
+      parts.forEach(indexCrests);
+      if (doc && mode.type === "list") render();
+    });
   }
 
   function tickCountdowns() {
