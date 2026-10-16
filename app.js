@@ -29,7 +29,32 @@
   var pastOpen = false;
   var jumpTop = false;
   var openGames = {};
+  var openSubs = {};
   var crestByNorm = {};
+  var extras = null;
+  var venueByNorm = {};
+  var clubByNorm = {};
+  var CHECK_ITEMS = [
+    ["cards", "Cards"],
+    ["whistle", "Whistle"],
+    ["watch", "Watch"],
+    ["licence", "Licence"],
+    ["sheet", "Match sheet"]
+  ];
+  var REF_SHIRTS = ["black", "yellow", "red", "green", "blue"];
+  var COLOUR_FAMILY = {
+    black: "black", preto: "black", preta: "black", negro: "black", negra: "black",
+    yellow: "yellow", amarelo: "yellow", amarela: "yellow", gold: "yellow", dourado: "yellow", dourada: "yellow",
+    red: "red", vermelho: "red", vermelha: "red", encarnado: "red", encarnada: "red",
+    grena: "red", grenat: "red", bordo: "red", burgundy: "red", maroon: "red", claret: "red",
+    green: "green", verde: "green",
+    blue: "blue", azul: "blue", celeste: "blue",
+    white: "white", branco: "white", branca: "white",
+    orange: "orange", laranja: "orange",
+    purple: "purple", roxo: "purple", roxa: "purple", violeta: "purple",
+    pink: "pink", rosa: "pink",
+    grey: "grey", gray: "grey", cinza: "grey", cinzento: "grey", cinzenta: "grey"
+  };
   var CREST_DROP = {
     de: 1, da: 1, do: 1, dos: 1, das: 1, e: 1, a: 1, o: 1, os: 1, as: 1,
     futebol: 1, clube: 1, club: 1, sport: 1, sporting: 1, grupo: 1,
@@ -618,6 +643,432 @@
     return summary;
   }
 
+  function safeHttp(url) {
+    var value = line(url);
+    if (!/^https:\/\/\S+$/i.test(value)) return "";
+    return value;
+  }
+
+  function extrasGame(game) {
+    if (!extras || !Array.isArray(extras.games)) return null;
+    var id = line(game && game.id);
+    if (!id) return null;
+    for (var i = 0; i < extras.games.length; i += 1) {
+      var item = extras.games[i];
+      if (isRecord(item) && line(item.id) === id) return item;
+    }
+    return null;
+  }
+
+  function indexExtras(data) {
+    extras = isRecord(data) ? data : null;
+    venueByNorm = {};
+    clubByNorm = {};
+    if (!extras) return;
+    var venues = isRecord(extras.venues) ? extras.venues : {};
+    Object.keys(venues).forEach(function (name) {
+      var venue = venues[name];
+      if (!isRecord(venue)) return;
+      [name, venue.osm_name, venue.address].forEach(function (label) {
+        var key = normClub(label);
+        if (key && !venueByNorm[key]) venueByNorm[key] = venue;
+      });
+    });
+    var clubs = isRecord(extras.clubs) ? extras.clubs : {};
+    Object.keys(clubs).forEach(function (name) {
+      var club = clubs[name];
+      if (!isRecord(club)) return;
+      [name, club.full_name].forEach(function (label) {
+        var key = normClub(label);
+        if (key && !clubByNorm[key]) clubByNorm[key] = club;
+      });
+    });
+  }
+
+  function venueRecord(game) {
+    var named = line(game.venue);
+    if (named) {
+      var hit = venueByNorm[normClub(named)];
+      if (hit) return hit;
+    }
+    var extra = extrasGame(game);
+    var extraVenue = extra ? line(extra.venue) : "";
+    if (!extraVenue) return null;
+    if (named && normClub(named) !== normClub(extraVenue)) return null;
+    return venueByNorm[normClub(extraVenue)] || null;
+  }
+
+  function drivingMinutes(record) {
+    if (!record) return null;
+    var minutes = record.driving_minutes_from_guimaraes;
+    if (typeof minutes !== "number" || !isFinite(minutes) || minutes < 0) return null;
+    if (!safeHttp(record.route_source_url)) return null;
+    return Math.round(minutes);
+  }
+
+  function lisbonClock(ms) {
+    var date = new Intl.DateTimeFormat("en-CA", {
+      timeZone: TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date(ms));
+    var parts = {};
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: TZ,
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).formatToParts(new Date(ms)).forEach(function (part) {
+      if (part.type !== "literal") parts[part.type] = part.value;
+    });
+    var hour = parts.hour === "24" ? "00" : parts.hour;
+    return { date: date, time: hour + ":" + parts.minute };
+  }
+
+  function leaveByText(game, minutes) {
+    var ms = zonedMs(line(game.date), line(game.time));
+    if (ms == null) return "";
+    var clock = lisbonClock(ms - (minutes + 60) * 60000);
+    if (clock.date !== line(game.date)) {
+      var label = formatDateLabel(clock.date);
+      return label ? label + " · " + clock.time : clock.time;
+    }
+    return clock.time;
+  }
+
+  function originLabel() {
+    var origin = extras && isRecord(extras.driving_origin) ? line(extras.driving_origin.label) : "";
+    return origin || "Guimarães";
+  }
+
+  function subDetails(key, title, gameId) {
+    var el = document.createElement("details");
+    el.className = "subdetails";
+    var storeKey = line(gameId) + ":" + key;
+    el.setAttribute("data-sub", storeKey);
+    if (openSubs[storeKey]) el.open = true;
+    var summary = document.createElement("summary");
+    summary.textContent = title;
+    el.appendChild(summary);
+    var body = node("div", "sub-body");
+    el.appendChild(body);
+    return { el: el, body: body };
+  }
+
+  function externalLink(href, text, className) {
+    var url = safeHttp(href);
+    if (!url) return null;
+    var link = node("a", className || "", text || url);
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    return link;
+  }
+
+  function appendVenueSection(parent, game) {
+    var block = subDetails("venue", "Venue", game.id);
+    var record = venueRecord(game);
+    var named = line(game.venue);
+    var address = record ? line(record.address) : "";
+    var label = address || named;
+    var maps = record ? safeHttp(record.maps_url) : "";
+    if (!maps && label) {
+      maps = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(label);
+    }
+    if (!label && !maps) {
+      block.body.appendChild(node("p", "gap-note", "—"));
+    } else {
+      var link = externalLink(maps, label || "Map", "map");
+      if (link) block.body.appendChild(link);
+      else if (label) block.body.appendChild(node("p", "detail-line", label));
+      var minutes = drivingMinutes(record);
+      if (minutes != null) {
+        block.body.appendChild(node("p", "detail-line", minutes + " min drive from " + originLabel()));
+        var leave = leaveByText(game, minutes);
+        if (leave) block.body.appendChild(node("p", "detail-line", "Leave by " + leave));
+      }
+    }
+    parent.appendChild(block.el);
+  }
+
+  function clubRecord(name) {
+    var key = normClub(name);
+    return key && clubByNorm[key] ? clubByNorm[key] : null;
+  }
+
+  function knownColours(club) {
+    if (!club || !line(club.primary)) return null;
+    return {
+      primary: line(club.primary),
+      secondary: line(club.secondary),
+      source: safeHttp(club.source_url)
+    };
+  }
+
+  function colourFamilies(text) {
+    var words = foldName(text).replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+    var found = [];
+    words.forEach(function (word) {
+      var family = COLOUR_FAMILY[word];
+      if (family && found.indexOf(family) < 0) found.push(family);
+    });
+    return found.length ? found : null;
+  }
+
+  function shirtWord(name) {
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
+  function refereeShirt(homeFamilies, awayFamilies) {
+    if (!homeFamilies || !awayFamilies) return "";
+    var blocked = {};
+    homeFamilies.concat(awayFamilies).forEach(function (family) {
+      if (REF_SHIRTS.indexOf(family) >= 0) blocked[family] = 1;
+    });
+    for (var i = 0; i < REF_SHIRTS.length; i += 1) {
+      if (!blocked[REF_SHIRTS[i]]) return shirtWord(REF_SHIRTS[i]);
+    }
+    return "";
+  }
+
+  function appendColourLine(parent, name, colours) {
+    var row = node("p", "detail-line");
+    var shown = "—";
+    if (colours) {
+      shown = colours.primary;
+      if (colours.secondary) shown += " / " + colours.secondary;
+    }
+    row.appendChild(document.createTextNode((name || "Team") + ": " + shown));
+    if (colours && colours.source) {
+      row.appendChild(document.createTextNode(" "));
+      var link = externalLink(colours.source, "source");
+      if (link) row.appendChild(link);
+    }
+    parent.appendChild(row);
+  }
+
+  function appendKitSection(parent, game) {
+    var block = subDetails("kits", "Kits", game.id);
+    var home = knownColours(clubRecord(game.home));
+    var away = knownColours(clubRecord(game.away));
+    appendColourLine(block.body, line(game.home) || "Home", home);
+    appendColourLine(block.body, line(game.away) || "Away", away);
+    var homeText = home ? [home.primary, home.secondary].filter(Boolean).join(" ") : "";
+    var awayText = away ? [away.primary, away.secondary].filter(Boolean).join(" ") : "";
+    var suggestion = refereeShirt(
+      home ? colourFamilies(homeText) : null,
+      away ? colourFamilies(awayText) : null
+    );
+    block.body.appendChild(node("p", "detail-line", "Referee shirt: " + (suggestion || "—")));
+    parent.appendChild(block.el);
+  }
+
+  function storageGet(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {}
+  }
+
+  function readChecks(id) {
+    try {
+      var data = JSON.parse(storageGet("referee-games:check:" + id) || "null");
+      return isRecord(data) ? data : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function appendChecklist(parent, game) {
+    var block = subDetails("checklist", "Pre-game checklist", game.id);
+    var saved = readChecks(game.id);
+    var list = node("div", "checks");
+    CHECK_ITEMS.forEach(function (item) {
+      var label = node("label", "check");
+      var input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = !!saved[item[0]];
+      input.addEventListener("change", function () {
+        var current = readChecks(game.id);
+        current[item[0]] = input.checked;
+        storageSet("referee-games:check:" + game.id, JSON.stringify(current));
+      });
+      label.appendChild(input);
+      label.appendChild(node("span", "", item[1]));
+      list.appendChild(label);
+    });
+    block.body.appendChild(list);
+    parent.appendChild(block.el);
+  }
+
+  function linesFrom(value) {
+    if (value == null) return [];
+    if (typeof value === "string") {
+      var text = blockText(value);
+      return text ? text.split("\n").map(line).filter(Boolean) : [];
+    }
+    if (Array.isArray(value)) {
+      var out = [];
+      value.forEach(function (item) {
+        linesFrom(item).forEach(function (part) { out.push(part); });
+      });
+      return out;
+    }
+    if (!isRecord(value)) return [];
+    var name = line(value.name || value.player);
+    var reason = line(value.reason || value.detail);
+    if (name || reason) return [name && reason ? name + " — " + reason : (name || reason)];
+    var bits = [];
+    ["summary", "note", "notes", "result", "score", "home", "away"].forEach(function (key) {
+      if (typeof value[key] === "string" && line(value[key])) bits.push(line(value[key]));
+    });
+    return bits;
+  }
+
+  function factLines(game, keys) {
+    var lines = [];
+    var sources = [game, extrasGame(game)];
+    sources.forEach(function (source) {
+      if (!isRecord(source)) return;
+      keys.forEach(function (key) {
+        linesFrom(source[key]).forEach(function (part) {
+          if (lines.indexOf(part) < 0) lines.push(part);
+        });
+      });
+    });
+    return lines;
+  }
+
+  function appendFactSection(parent, key, title, game, keys, empty) {
+    var block = subDetails(key, title, game.id);
+    var lines = factLines(game, keys);
+    if (!lines.length) {
+      block.body.appendChild(node("p", "gap-note", empty));
+    } else {
+      lines.forEach(function (text) {
+        block.body.appendChild(node("p", "detail-line", text));
+      });
+    }
+    parent.appendChild(block.el);
+  }
+
+  function appendAssessment(parent, game) {
+    var block = subDetails("assessment", "Post-game self-assessment", game.id);
+    var area = document.createElement("textarea");
+    area.className = "self-note";
+    area.rows = 4;
+    area.setAttribute("aria-label", "Post-game self-assessment");
+    area.value = storageGet("referee-games:note:" + game.id) || "";
+    area.addEventListener("input", function () {
+      storageSet("referee-games:note:" + game.id, area.value);
+    });
+    block.body.appendChild(area);
+    block.body.appendChild(node("p", "device-note", "Saved on this device only."));
+    parent.appendChild(block.el);
+  }
+
+  function contactBits(value) {
+    if (typeof value === "string") {
+      var name = line(value);
+      return name ? { name: name, phone: "", email: "" } : null;
+    }
+    if (!isRecord(value)) return null;
+    var bits = {
+      name: line(value.name),
+      phone: line(value.phone),
+      email: line(value.email)
+    };
+    if (!bits.name && !bits.phone && !bits.email) return null;
+    return bits;
+  }
+
+  function appendContactPerson(parent, labelText, bits) {
+    var wrap = node("div", "contact");
+    wrap.appendChild(node("span", "fact-label", labelText));
+    if (!bits) {
+      wrap.appendChild(node("p", "gap-note", "Not set"));
+      parent.appendChild(wrap);
+      return;
+    }
+    if (bits.name) wrap.appendChild(node("p", "detail-line", bits.name));
+    if (bits.phone) {
+      var href = telHref(bits.phone);
+      if (href) {
+        var phone = node("a", "phone", bits.phone);
+        phone.href = href;
+        wrap.appendChild(phone);
+      } else {
+        wrap.appendChild(node("p", "detail-line", bits.phone));
+      }
+    }
+    if (bits.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bits.email)) {
+      var mail = node("a", "phone", bits.email);
+      mail.href = "mailto:" + bits.email;
+      wrap.appendChild(mail);
+    } else if (bits.email) {
+      wrap.appendChild(node("p", "detail-line", bits.email));
+    }
+    parent.appendChild(wrap);
+  }
+
+  function appendContacts(parent, game) {
+    var block = subDetails("contacts", "Contacts", game.id);
+    var team = isRecord(game.team) ? game.team : null;
+    var delegate = contactBits(game.delegate) || contactBits(team && team.delegate);
+    appendContactPerson(block.body, "Delegate", delegate);
+    var office = extras && isRecord(extras.af_braga) ? extras.af_braga : null;
+    var wrap = node("div", "contact");
+    wrap.appendChild(node("span", "fact-label", "AF Braga"));
+    var address = office ? line(office.address) : "";
+    var phones = office && Array.isArray(office.phones) ? office.phones.map(line).filter(Boolean) : [];
+    var email = office ? line(office.email) : "";
+    var source = office ? safeHttp(office.source_url) : "";
+    if (!address && !phones.length && !email) {
+      wrap.appendChild(node("p", "gap-note", "Not set"));
+    } else {
+      if (address) wrap.appendChild(node("p", "detail-line", address));
+      phones.forEach(function (phone) {
+        var href = telHref(phone);
+        if (!href) {
+          wrap.appendChild(node("p", "detail-line", phone));
+          return;
+        }
+        var link = node("a", "phone", phone);
+        link.href = href;
+        wrap.appendChild(link);
+      });
+      if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        var mail = node("a", "phone", email);
+        mail.href = "mailto:" + email;
+        wrap.appendChild(mail);
+      }
+      if (source) {
+        var cite = externalLink(source, source, "source");
+        if (cite) wrap.appendChild(cite);
+      }
+    }
+    block.body.appendChild(wrap);
+    parent.appendChild(block.el);
+  }
+
+  function appendDetailSections(parent, game) {
+    appendVenueSection(parent, game);
+    appendKitSection(parent, game);
+    appendChecklist(parent, game);
+    appendFactSection(parent, "discipline", "Discipline", game, ["discipline", "dangerPlayers", "danger_players"], "No data");
+    appendFactSection(parent, "h2h", "Head-to-head", game, ["headToHead", "head_to_head", "lastMeeting", "last_meeting"], "No data");
+    appendAssessment(parent, game);
+    appendContacts(parent, game);
+  }
+
   function renderCard(game, past) {
     var card = node("article", past ? "match is-past" : "match");
     card.setAttribute("data-game-id", game.id);
@@ -718,6 +1169,7 @@
     appendPrep(body, game);
     appendRules(body, game);
     appendNotes(body, game);
+    appendDetailSections(body, game);
 
     var edit = node("button", "edit-btn", "Edit");
     edit.type = "button";
@@ -956,6 +1408,9 @@
       var id = el.parentElement && el.parentElement.getAttribute("data-game-id");
       if (id) openGames[id] = el.open;
     });
+    document.querySelectorAll(".subdetails[data-sub]").forEach(function (el) {
+      openSubs[el.getAttribute("data-sub")] = el.open;
+    });
     var y = jumpTop ? 0 : window.scrollY;
     if (!hasToken()) {
       renderEmpty("Your games stay private. Connect sync to load them on this device.");
@@ -1061,7 +1516,7 @@
     }
     if (loading || saving || saveTimer || dirty || mode.type !== "list") return;
     var active = document.activeElement;
-    if (active && active.closest && active.closest("#main form")) return;
+    if (active && active.closest && (active.closest("#main form") || active.closest(".self-note, .check"))) return;
     loading = true;
     GhSync.load(APP_ID, applyRemote).then(function (msg) {
       loading = false;
@@ -1309,6 +1764,22 @@
     });
   }
 
+  function loadExtras() {
+    fetch("data/game-extras.json")
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (data) {
+        indexExtras(data);
+        if (doc && mode.type === "list") render();
+      })
+      .catch(function () {
+        extras = null;
+        venueByNorm = {};
+        clubByNorm = {};
+      });
+  }
+
   function loadCrests() {
     fetch("assets/crests/crests.json")
       .then(function (res) {
@@ -1370,6 +1841,7 @@
   showConnect();
   render();
   loadCrests();
+  loadExtras();
   setInterval(autoLoad, 60000);
   setInterval(tickCountdowns, 15000);
   autoLoad();
