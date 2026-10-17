@@ -1869,8 +1869,24 @@
     });
   }
 
+  // Game extras (venues, driving origin) live in private progress-sync/referee-games-extras.json.
+  function loadPrivateJson(name) {
+    var cfg = null;
+    try { cfg = JSON.parse(localStorage.getItem("dong-gh-sync") || "null"); } catch (e) { cfg = null; }
+    if (!cfg || typeof cfg.token !== "string" || !cfg.token.trim()) return Promise.resolve(null);
+    var repo = typeof cfg.repo === "string" && cfg.repo.trim() ? cfg.repo.trim() : "Dong-Xuyong/progress-sync";
+    return fetch("https://api.github.com/repos/" + repo + "/contents/" + name, {
+      cache: "no-store",
+      headers: { Authorization: "Bearer " + cfg.token.trim(), Accept: "application/vnd.github.raw" }
+    }).then(function (res) {
+      return res.ok ? res.json() : null;
+    }).catch(function () {
+      return null;
+    });
+  }
+
   function loadExtras() {
-    loadJson("data/game-extras.json").then(function (data) {
+    loadPrivateJson("referee-games-extras.json").then(function (data) {
       indexExtras(data);
       if (doc && mode.type === "list") render();
     });
